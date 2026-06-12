@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Stock Lookup</title>
+<title>Stock Lookup & Audit</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
 <style>
@@ -130,8 +130,6 @@
     width: 100%;
     transition: background 0.15s;
   }
-  .btn-confirm:hover { background: #4a59e0; }
-  .btn-confirm:active { background: #3a49d0; }
 
   /* Scanner area */
   #scanner-section {
@@ -185,7 +183,6 @@
     color: #7a7f9a;
   }
 
-  /* Control buttons adjustment */
   .control-row {
     display: flex;
     gap: 8px;
@@ -205,10 +202,18 @@
     justify-content: center;
     gap: 4px;
   }
-  .btn-action.stop {
-    background: #2a1020;
-    color: #e05c6a;
-    border-color: #4a2030;
+  .btn-action.stop { background: #2a1020; color: #e05c6a; border-color: #4a2030; }
+  .btn-export {
+    background: #142f22;
+    color: #5ccf7e;
+    border: 1px solid #1e4a30;
+    width: 100%;
+    border-radius: 9px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
   }
 
   /* Manual input */
@@ -226,7 +231,6 @@
     outline: none;
   }
   .manual-row input:focus { border-color: #5b6af0; }
-  .manual-row input::placeholder { color: #444860; }
   .btn-search {
     background: #5b6af0;
     color: #fff;
@@ -236,10 +240,9 @@
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    white-space: nowrap;
   }
 
-  /* Result */
+  /* Result Card & Audit Form */
   #result-card {
     display: none;
     background: #1a1d27;
@@ -255,14 +258,56 @@
     align-items: center;
     justify-content: space-between;
   }
-  .result-header span {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.8px; color: #666b8a;
-  }
-  .result-barcode {
-    font-size: 13px; color: #5b6af0; font-family: monospace;
-  }
+  .result-header span { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #666b8a; }
+  .result-barcode { font-size: 13px; color: #5b6af0; font-family: monospace; }
   .result-body { padding: 16px; }
+  
+  .stock-comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .stock-box-panel {
+    background: #10121a;
+    border: 1px solid #222533;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .stock-box-panel .title { font-size: 11px; color: #666b8a; text-transform: uppercase; margin-bottom: 4px; }
+  .stock-box-panel .num { font-size: 24px; font-weight: 700; color: #fff; }
+  
+  .audit-input-row {
+    background: #141f1a;
+    border: 1px solid #1e3828;
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .audit-input-row.discrepancy-active {
+    background: #2b1b10;
+    border-color: #543118;
+  }
+  .audit-input-row label { font-size: 13px; font-weight: 600; color: #5ccf7e; }
+  .audit-input-row.discrepancy-active label { color: #f0a850; }
+  .audit-input-row input {
+    width: 90px;
+    background: #0f1117;
+    border: 1px solid #2a2d3a;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    outline: none;
+  }
+  
   .result-row {
     display: flex; justify-content: space-between;
     align-items: baseline;
@@ -270,23 +315,8 @@
     border-bottom: 1px solid #1e2030;
     font-size: 13px;
   }
-  .result-row:last-child { border-bottom: none; }
   .result-row .lbl { color: #666b8a; }
-  .result-row .val { color: #d0d4f0; font-weight: 500; text-align: right; max-width: 60%; word-break: break-word; }
-  .qty-badge {
-    font-size: 28px; font-weight: 700;
-    text-align: center;
-    padding: 14px 0 8px;
-  }
-  .qty-badge.in-stock { color: #5ccf7e; }
-  .qty-badge.low-stock { color: #f0a850; }
-  .qty-badge.out-stock { color: #e05c6a; }
-  .qty-label {
-    text-align: center; font-size: 11px; color: #666b8a;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    padding-bottom: 12px;
-  }
-  .result-divider { height: 1px; background: #1e2030; margin: 4px 0 12px; }
+  .result-row .val { color: #d0d4f0; text-align: right; max-width: 60%; word-break: break-word; }
 
   /* Not found */
   #not-found {
@@ -297,11 +327,9 @@
     padding: 20px 16px;
     text-align: center;
   }
-  #not-found .nf-icon { font-size: 28px; margin-bottom: 8px; }
-  #not-found h3 { font-size: 14px; color: #e05c6a; margin-bottom: 4px; }
-  #not-found p { font-size: 12px; color: #7a3040; }
+  #not-found h3 { font-size: 14px; color: #e05c6a; }
+  #not-found p { font-size: 12px; color: #7a3040; margin-top: 4px; }
 
-  /* Status bar */
   #status-bar {
     background: #1a1d27;
     border: 1px solid #2a2d3a;
@@ -312,29 +340,15 @@
     text-align: center;
     display: none;
   }
-
-  .divider-or {
-    text-align: center;
-    font-size: 11px;
-    color: #444860;
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .divider-or::before, .divider-or::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: #2a2d3a;
-  }
+  .divider-or { text-align: center; font-size: 11px; color: #444860; display: flex; align-items: center; gap: 10px; }
+  .divider-or::before, .divider-or::after { content: ''; flex: 1; height: 1px; background: #2a2d3a; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>📦 Stock Lookup</h1>
-  <p>Scan barcode / last 5-6 digits → get quantity</p>
+  <h1>📦 Stock Lookup & Audit</h1>
+  <p>Track quantities and save discrepancies on your phone</p>
 </header>
 
 <div class="container">
@@ -342,8 +356,8 @@
   <div class="upload-card" id="upload-card">
     <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" />
     <div class="upload-icon">📊</div>
-    <h3 id="upload-title">Upload your Excel / CSV</h3>
-    <p id="upload-sub">Tap to select your inventory file</p>
+    <h3 id="upload-title">Upload Vyapar Export Excel</h3>
+    <p id="upload-sub">Tap to load your master stock list</p>
   </div>
 
   <div id="col-mapper">
@@ -360,7 +374,7 @@
       <label>Name col <span style="color:#444860">(opt)</span></label>
       <select id="sel-name"></select>
     </div>
-    <button class="btn-confirm" onclick="confirmMapping()">✓ Confirm & Start Scanning</button>
+    <button class="btn-confirm" onclick="confirmMapping()">✓ Confirm & Start Audit</button>
   </div>
 
   <div id="scanner-section">
@@ -370,30 +384,45 @@
       <video id="video" playsinline muted></video>
       <div class="scan-overlay"><div class="scan-box"></div></div>
     </div>
-    <p class="scan-hint">Tip: Hold phone 6-10 inches away if it's blurry</p>
     
     <div class="control-row">
-      <button class="btn-action stop" id="btn-stop" onclick="stopCamera()">⏹ Stop</button>
+      <button class="btn-action stop" id="btn-stop" onclick="stopCamera()">⏹ Stop Cam</button>
       <button class="btn-action" id="btn-zoom" onclick="toggleZoom()">🔍 Zoom (1x)</button>
       <button class="btn-action" onclick="toggleTorch()">🔦 Torch</button>
     </div>
 
-    <div class="divider-or">or type barcode (full or last 5-6 digits)</div>
+    <button class="btn-export" id="btn-download" onclick="exportDiscrepancies()">📥 Export Discrepancy File (<span id="audit-count">0</span>)</button>
+
+    <div class="divider-or">or type last 5-6 digits</div>
 
     <div class="manual-row">
-      <input type="text" id="manual-input" placeholder="Type barcode & press Search" inputmode="numeric" />
+      <input type="text" id="manual-input" placeholder="Type numbers..." inputmode="numeric" />
       <button class="btn-search" onclick="searchManual()">Search</button>
     </div>
 
     <div id="result-card">
       <div class="result-header">
-        <span>Result</span>
+        <span>Scanned Item</span>
         <span class="result-barcode" id="res-barcode"></span>
       </div>
       <div class="result-body">
-        <div class="qty-badge" id="res-qty">—</div>
-        <div class="qty-label">units in stock</div>
-        <div class="result-divider"></div>
+        
+        <div class="stock-comparison-grid">
+          <div class="stock-box-panel">
+            <div class="title">System Stock</div>
+            <div class="num" id="system-qty-val">—</div>
+          </div>
+          <div class="stock-box-panel" style="background: #141824;">
+            <div class="title" style="color: #5b6af0;">Current Status</div>
+            <div class="num" id="counted-qty-status" style="color: #5ccf7e;">Match</div>
+          </div>
+        </div>
+
+        <div class="audit-input-row" id="audit-input-panel">
+          <label id="audit-label">Counted Qty:</label>
+          <input type="number" id="physical-qty-input" step="any" oninput="updateAuditValue()" placeholder="Qty" />
+        </div>
+
         <div class="result-row" id="res-name-row">
           <span class="lbl">Product</span>
           <span class="val" id="res-name">—</span>
@@ -403,7 +432,6 @@
     </div>
 
     <div id="not-found">
-      <div class="nf-icon">🔍</div>
       <h3>Barcode not found</h3>
       <p id="nf-code"></p>
     </div>
@@ -420,13 +448,24 @@ let scanning = false;
 let lastScanned = '';
 let scanCooldown = false;
 let currentZoom = 1;
+let currentActiveItemCode = null;
 
-// Maps for instant database lookups
+// Audit records stored cleanly by item key code
+let auditDiscrepancies = {};
+
 let barcodeMap = new Map();
 let suffix5Map = new Map();
 let suffix6Map = new Map();
 
-// ── Upload Data ─────────────────────────────────────────────────────────────
+// Load any session data from local storage if existing
+if(localStorage.getItem('vyapar_audit_store')) {
+  try {
+    auditDiscrepancies = JSON.parse(localStorage.getItem('vyapar_audit_store'));
+    updateAuditCountBadge();
+  } catch(e) {}
+}
+
+// ── Upload ──────────────────────────────────────────────────────────────────
 document.getElementById('excel-file').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -444,9 +483,7 @@ document.getElementById('excel-file').addEventListener('change', function(e) {
       document.getElementById('upload-sub').textContent = json.length + ' rows loaded';
       document.getElementById('upload-card').classList.add('loaded');
       document.getElementById('col-mapper').style.display = 'flex';
-    } catch(err) {
-      alert('Could not read file: ' + err.message);
-    }
+    } catch(err) { alert('Could not read file: ' + err.message); }
   };
   reader.readAsBinaryString(file);
 });
@@ -462,9 +499,9 @@ function populateSelectors() {
     });
   });
   const lower = headers.map(h => h.toLowerCase());
-  const barcodeGuess = lower.findIndex(h => /barcode|ean|upc|sku|code|id/.test(h));
-  const qtyGuess = lower.findIndex(h => /qty|quantity|stock|count|available|balance/.test(h));
-  const nameGuess = lower.findIndex(h => /name|product|description|item|title/.test(h));
+  const barcodeGuess = lower.findIndex(h => /barcode|ean|upc|sku|code|id/i.test(h));
+  const qtyGuess = lower.findIndex(h => /qty|quantity|stock|count|available|balance/i.test(h));
+  const nameGuess = lower.findIndex(h => /name|product|description|item|title/i.test(h));
   if (barcodeGuess >= 0) document.getElementById('sel-barcode').selectedIndex = barcodeGuess;
   if (qtyGuess >= 0) document.getElementById('sel-qty').selectedIndex = qtyGuess;
   if (nameGuess >= 0) document.getElementById('sel-name').selectedIndex = nameGuess + 1;
@@ -483,9 +520,7 @@ function confirmMapping() {
   sheetData.forEach(row => {
     const rawCode = String(row[barcodeCol] || '').trim();
     if (!rawCode) return;
-    
     barcodeMap.set(rawCode, row);
-    
     if (rawCode.length >= 5) suffix5Map.set(rawCode.slice(-5), row);
     if (rawCode.length >= 6) suffix6Map.set(rawCode.slice(-6), row);
   });
@@ -495,52 +530,29 @@ function confirmMapping() {
   startCamera();
 }
 
-// ── Camera Advanced Operations ──────────────────────────────────────────────
+// ── Camera Operations ───────────────────────────────────────────────────────
 async function startCamera() {
   setStatus('Starting autofocus camera…');
   try {
-    // 1. Force continuous auto-focus configuration directly into the hardware initialization
     const constraints = {
-      video: { 
-        facingMode: { ideal: 'environment' }, 
-        width: { ideal: 1280 }, // Slightly higher resolution to help focus read fine line barcodes
-        height: { ideal: 720 },
-        frameRate: { ideal: 30 },
-        focusMode: { ideal: 'continuous' } 
-      }
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, focusMode: { ideal: 'continuous' } }
     };
-
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     const video = document.getElementById('video');
     video.srcObject = stream;
     await video.play();
 
-    // 2. Apply advanced real-time browser focus hints to the track if supported
     const track = stream.getVideoTracks()[0];
     if (track && track.getCapabilities) {
       const caps = track.getCapabilities();
       const advancedConstraints = {};
-      
-      if (caps.focusMode && caps.focusMode.includes('continuous')) {
-        advancedConstraints.focusMode = 'continuous';
-      }
-      // Force default zoom preset to 1.5x or 2x if available to stop macro focusing errors
-      if (caps.zoom) {
-        currentZoom = caps.zoom.min || 1;
-        if (caps.zoom.max >= 2) {
-          currentZoom = 2; // Default to 2x zoom so users don't have to get too close
-          advancedConstraints.zoom = currentZoom;
-          document.getElementById('btn-zoom').textContent = `🔍 Zoom (${currentZoom}x)`;
-        }
-      }
-      if (Object.keys(advancedConstraints).length > 0) {
-        await track.applyConstraints({ advanced: [advancedConstraints] });
-      }
+      if (caps.focusMode && caps.focusMode.includes('continuous')) advancedConstraints.focusMode = 'continuous';
+      if (caps.zoom && caps.zoom.max >= 2) { currentZoom = 2; advancedConstraints.zoom = currentZoom; document.getElementById('btn-zoom').textContent = `🔍 Zoom (${currentZoom}x)`; }
+      if (Object.keys(advancedConstraints).length > 0) await track.applyConstraints({ advanced: [advancedConstraints] });
     }
 
     codeReader = new ZXing.BrowserMultiFormatReader();
-    codeReader.timeBetweenDecodingAttempts = 60; // Throttled processing avoids lag spikes
-    
+    codeReader.timeBetweenDecodingAttempts = 60;
     codeReader.decodeFromStream(stream, video, (result, err) => {
       if (result && !scanCooldown) {
         const code = result.getText();
@@ -555,30 +567,16 @@ async function startCamera() {
     });
     scanning = true;
     setStatus('📷 Camera focused. Align barcode in box.');
-  } catch(err) {
-    setStatus('Camera initialization failed. Use manual search below.');
-    console.error(err);
-  }
+  } catch(err) { setStatus('Using manual search row.'); }
 }
 
-// ── Hardware Zoom Control Function ──────────────────────────────────────────
 async function toggleZoom() {
   const video = document.getElementById('video');
   const track = video.srcObject?.getVideoTracks?.()[0];
-  if (!track || !track.getCapabilities) return alert('Camera not active');
-  
+  if (!track || !track.getCapabilities) return;
   const caps = track.getCapabilities();
-  if (!caps.zoom) return alert('Digital zoom not supported on this phone device');
-
-  // Cycle zoom values between 1x, 2x, and 3x depending on capabilities
-  if (currentZoom === 1) {
-    currentZoom = Math.min(2, caps.zoom.max);
-  } else if (currentZoom === 2) {
-    currentZoom = Math.min(3, caps.zoom.max);
-  } else {
-    currentZoom = caps.zoom.min || 1;
-  }
-
+  if (!caps.zoom) return;
+  currentZoom = currentZoom === 1 ? Math.min(2, caps.zoom.max) : currentZoom === 2 ? Math.min(3, caps.zoom.max) : caps.zoom.min || 1;
   await track.applyConstraints({ advanced: [{ zoom: currentZoom }] });
   document.getElementById('btn-zoom').textContent = `🔍 Zoom (${currentZoom.toFixed(1)}x)`;
 }
@@ -586,9 +584,9 @@ async function toggleZoom() {
 async function toggleTorch(){
   const video = document.getElementById('video');
   const track = video.srcObject?.getVideoTracks?.()[0];
-  if(!track) return alert('Camera not active');
+  if(!track) return;
   const caps = track.getCapabilities?.();
-  if(!caps || !caps.torch) return alert('Torch feature not supported');
+  if(!caps || !caps.torch) return;
   window.__torchOn = !window.__torchOn;
   await track.applyConstraints({advanced:[{torch: window.__torchOn}]});
 }
@@ -596,10 +594,7 @@ async function toggleTorch(){
 function stopCamera() {
   if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
   const video = document.getElementById('video');
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-  }
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
   scanning = false;
   document.getElementById('video-wrap').style.display = 'none';
   document.getElementById('btn-stop').style.display = 'none';
@@ -609,20 +604,17 @@ function stopCamera() {
 
 function setStatus(msg) {
   const bar = document.getElementById('status-bar');
-  bar.style.display = 'block';
-  bar.textContent = msg;
+  bar.style.display = 'block'; bar.textContent = msg;
 }
 
-// ── Match Logic ─────────────────────────────────────────────────────────────
+// ── Item Lookup & Audit Logic ───────────────────────────────────────────────
 function searchManual() {
   const val = document.getElementById('manual-input').value.trim();
   if (!val) return;
   handleBarcode(val);
 }
 
-document.getElementById('manual-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') searchManual();
-});
+document.getElementById('manual-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') searchManual(); });
 
 function handleBarcode(code) {
   document.getElementById('result-card').style.display = 'none';
@@ -635,7 +627,6 @@ function handleBarcode(code) {
     if (codeStr.length === 5) row = suffix5Map.get(codeStr);
     else if (codeStr.length === 6) row = suffix6Map.get(codeStr);
   }
-
   if (!row && codeStr.length >= 4) {
     row = sheetData.find(r => String(r[barcodeCol]).trim().endsWith(codeStr));
   }
@@ -646,14 +637,11 @@ function handleBarcode(code) {
     return;
   }
 
-  const qty = row[qtyCol];
-  const qtyNum = parseFloat(qty);
-  const card = document.getElementById('result-card');
-  const qtyEl = document.getElementById('res-qty');
-
-  document.getElementById('res-barcode').textContent = String(row[barcodeCol]).trim();
-  qtyEl.textContent = qty !== '' ? qty : '—';
-  qtyEl.className = 'qty-badge ' + (isNaN(qtyNum) ? '' : qtyNum <= 0 ? 'out-stock' : qtyNum <= 5 ? 'low-stock' : 'in-stock');
+  currentActiveItemCode = String(row[barcodeCol]).trim();
+  const originalQty = parseFloat(row[qtyCol]) || 0;
+  
+  document.getElementById('res-barcode').textContent = currentActiveItemCode;
+  document.getElementById('system-qty-val').textContent = originalQty;
 
   if (nameCol && row[nameCol]) {
     document.getElementById('res-name').textContent = row[nameCol];
@@ -662,6 +650,17 @@ function handleBarcode(code) {
     document.getElementById('res-name-row').style.display = 'none';
   }
 
+  // Check if this barcode already has a saved audit adjustment in local storage
+  const inputEl = document.getElementById('physical-qty-input');
+  if (auditDiscrepancies[currentActiveItemCode] !== undefined) {
+    inputEl.value = auditDiscrepancies[currentActiveItemCode].countedQty;
+  } else {
+    inputEl.value = originalQty; // Default to matching system stock
+  }
+
+  updateAuditValue(); // Refresh card colors and statuses
+
+  // Build optional attribute list below input rows
   const extraDiv = document.getElementById('extra-rows');
   extraDiv.innerHTML = '';
   const skip = new Set([barcodeCol, qtyCol, nameCol]);
@@ -673,24 +672,102 @@ function handleBarcode(code) {
     extraDiv.appendChild(div);
   });
 
-  card.style.display = 'block';
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('result-card').style.display = 'block';
+  document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Fires instantly when you type into the physical stock input
+function updateAuditValue() {
+  if (!currentActiveItemCode) return;
+  
+  const systemQty = parseFloat(document.getElementById('system-qty-val').textContent) || 0;
+  const typedVal = document.getElementById('physical-qty-input').value;
+  
+  const statusBadge = document.getElementById('counted-qty-status');
+  const panel = document.getElementById('audit-input-panel');
+  const label = document.getElementById('audit-label');
+
+  if (typedVal === '' || parseFloat(typedVal) === systemQty) {
+    // Quantities match: clear any custom tracking for this barcode
+    delete auditDiscrepancies[currentActiveItemCode];
+    
+    statusBadge.textContent = "Match";
+    statusBadge.style.color = "#5ccf7e";
+    panel.className = "audit-input-row";
+    label.textContent = "Counted Qty:";
+    label.style.color = "#5ccf7e";
+  } else {
+    // Discrepancy detected: save the change to memory
+    const counted = parseFloat(typedVal) || 0;
+    const prodName = document.getElementById('res-name').textContent || 'Unknown Item';
+    
+    auditDiscrepancies[currentActiveItemCode] = {
+      barcode: currentActiveItemCode,
+      name: prodName,
+      systemQty: systemQty,
+      countedQty: counted,
+      difference: counted - systemQty
+    };
+
+    statusBadge.textContent = "Mismatch";
+    statusBadge.style.color = "#f0a850";
+    panel.className = "audit-input-row discrepancy-active";
+    label.textContent = "Changed Qty ⚠️";
+    label.style.color = "#f0a850";
+  }
+
+  // Save progress locally to phone storage
+  localStorage.setItem('vyapar_audit_store', JSON.stringify(auditDiscrepancies));
+  updateAuditCountBadge();
+}
+
+function updateAuditCountBadge() {
+  const count = Object.keys(auditDiscrepancies).length;
+  document.getElementById('audit-count').textContent = count;
+}
+
+// ── Exporting Discrepancy File to Phone ─────────────────────────────────────
+function exportDiscrepancies() {
+  const records = Object.values(auditDiscrepancies);
+  if (records.length === 0) {
+    alert("No stock changes detected yet! Change 'Counted Qty' values on mismatched items first.");
+    return;
+  }
+
+  // Standard CSV row creation line
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += "Barcode/Item Code,Product Name,System Quantity,Physical Counted Quantity,Difference/Adjustment\n";
+
+  records.forEach(r => {
+    // Sanitize item names to prevent breaking CSV cells with commas
+    const sanitizedName = r.name.replace(/,/g, " ");
+    csvContent += `"${r.barcode}","${sanitizedName}",${r.systemQty},${r.countedQty},${r.difference}\n`;
+  });
+
+  // Create automated link download interaction for phone devices
+  const encodedUri = encodeURI(csvContent);
+  const downloadAnchor = document.createElement("a");
+  
+  // Format filename cleanly with the current local date stamp
+  const today = new Date().toISOString().slice(0, 10);
+  downloadAnchor.setAttribute("href", encodedUri);
+  downloadAnchor.setAttribute("download", `Vyapar_Stock_Changes_${today}.csv`);
+  
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  document.body.removeChild(downloadAnchor);
 }
 
 function scanSuccessFeedback(){
   try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
-  try{
+  try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 900;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    osc.frequency.value = 900; osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); gain.gain.setValueAtTime(0.05, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
     osc.stop(ctx.currentTime + 0.08);
-  }catch(e){}
+  } catch(e){}
 }
 </script>
 </body>
