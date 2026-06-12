@@ -161,28 +161,28 @@
     pointer-events: none;
   }
   .scan-box {
-    width: 240px; height: 140px;
+    width: 260px; height: 130px;
     border: 2px solid #5b6af0;
     border-radius: 10px;
-    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.55);
   }
-  .scan-box::before, .scan-box::after {
+  .scan-box::before {
     content: '';
     position: absolute;
     left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, #5b6af0, transparent);
-    animation: scan 1.5s linear infinite;
+    background: #5b6af0;
+    box-shadow: 0 0 8px #5b6af0;
+    animation: scan 2s linear infinite;
   }
-  .scan-box::after { animation-delay: 0.75s; }
   @keyframes scan {
-    0% { top: 0; } 100% { top: 100%; }
+    0% { top: 35%; } 50% { top: 65%; } 100% { top: 35%; }
   }
 
   .scan-hint {
     text-align: center;
     font-size: 12px;
-    color: #666b8a;
+    color: #7a7f9a;
   }
 
   /* Control buttons adjustment */
@@ -190,19 +190,25 @@
     display: flex;
     gap: 8px;
   }
-  .control-row .btn-stop {
-    flex: 2;
-  }
-  .control-row .btn-torch {
-    flex: 1;
+  .btn-action {
     background: #1a1d27;
     color: #d0d4f0;
     border: 1px solid #2a2d3a;
     border-radius: 9px;
-    padding: 9px 12px;
+    padding: 10px 12px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .btn-action.stop {
+    background: #2a1020;
+    color: #e05c6a;
+    border-color: #4a2030;
   }
 
   /* Manual input */
@@ -307,18 +313,6 @@
     display: none;
   }
 
-  .btn-stop {
-    background: #2a1020;
-    color: #e05c6a;
-    border: 1px solid #4a2030;
-    border-radius: 9px;
-    padding: 9px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    width: 100%;
-  }
-
   .divider-or {
     text-align: center;
     font-size: 11px;
@@ -376,11 +370,12 @@
       <video id="video" playsinline muted></video>
       <div class="scan-overlay"><div class="scan-box"></div></div>
     </div>
-    <p class="scan-hint">Point camera at barcode — auto-detects</p>
+    <p class="scan-hint">Tip: Hold phone 6-10 inches away if it's blurry</p>
     
     <div class="control-row">
-      <button class="btn-stop" id="btn-stop" onclick="stopCamera()">⏹ Stop Camera</button>
-      <button class="btn-torch" onclick="toggleTorch()">🔦 Torch</button>
+      <button class="btn-action stop" id="btn-stop" onclick="stopCamera()">⏹ Stop</button>
+      <button class="btn-action" id="btn-zoom" onclick="toggleZoom()">🔍 Zoom (1x)</button>
+      <button class="btn-action" onclick="toggleTorch()">🔦 Torch</button>
     </div>
 
     <div class="divider-or">or type barcode (full or last 5-6 digits)</div>
@@ -424,13 +419,14 @@ let codeReader = null;
 let scanning = false;
 let lastScanned = '';
 let scanCooldown = false;
+let currentZoom = 1;
 
-// Optimization maps for instant lookup matches
+// Maps for instant database lookups
 let barcodeMap = new Map();
 let suffix5Map = new Map();
 let suffix6Map = new Map();
 
-// ── Upload ──────────────────────────────────────────────────────────────────
+// ── Upload Data ─────────────────────────────────────────────────────────────
 document.getElementById('excel-file').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -480,7 +476,6 @@ function confirmMapping() {
   nameCol = document.getElementById('sel-name').value;
   if (!barcodeCol || !qtyCol) { alert('Please select barcode and quantity columns.'); return; }
 
-  // Re-build high speed O(1) matching indexing models
   barcodeMap.clear();
   suffix5Map.clear();
   suffix6Map.clear();
@@ -489,16 +484,10 @@ function confirmMapping() {
     const rawCode = String(row[barcodeCol] || '').trim();
     if (!rawCode) return;
     
-    // Main direct dictionary matching
     barcodeMap.set(rawCode, row);
     
-    // Index trailing fractions for faster custom inputs (last 5 & 6 digits)
-    if (rawCode.length >= 5) {
-      suffix5Map.set(rawCode.slice(-5), row);
-    }
-    if (rawCode.length >= 6) {
-      suffix6Map.set(rawCode.slice(-6), row);
-    }
+    if (rawCode.length >= 5) suffix5Map.set(rawCode.slice(-5), row);
+    if (rawCode.length >= 6) suffix6Map.set(rawCode.slice(-6), row);
   });
 
   document.getElementById('col-mapper').style.display = 'none';
@@ -506,28 +495,51 @@ function confirmMapping() {
   startCamera();
 }
 
-// ── Camera ──────────────────────────────────────────────────────────────────
+// ── Camera Advanced Operations ──────────────────────────────────────────────
 async function startCamera() {
-  setStatus('Starting camera…');
+  setStatus('Starting autofocus camera…');
   try {
-    // Ultra-Fast Tweaks: Limiting resolution options removes excessive computation overhead
-    const stream = await navigator.mediaDevices.getUserMedia({
+    // 1. Force continuous auto-focus configuration directly into the hardware initialization
+    const constraints = {
       video: { 
         facingMode: { ideal: 'environment' }, 
-        width: { ideal: 640 }, 
-        height: { ideal: 480 },
-        frameRate: { ideal: 30, min: 25 }
+        width: { ideal: 1280 }, // Slightly higher resolution to help focus read fine line barcodes
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 },
+        focusMode: { ideal: 'continuous' } 
       }
-    });
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     const video = document.getElementById('video');
     video.srcObject = stream;
     await video.play();
 
-    // Instantiate engine with custom time parsing limits
+    // 2. Apply advanced real-time browser focus hints to the track if supported
+    const track = stream.getVideoTracks()[0];
+    if (track && track.getCapabilities) {
+      const caps = track.getCapabilities();
+      const advancedConstraints = {};
+      
+      if (caps.focusMode && caps.focusMode.includes('continuous')) {
+        advancedConstraints.focusMode = 'continuous';
+      }
+      // Force default zoom preset to 1.5x or 2x if available to stop macro focusing errors
+      if (caps.zoom) {
+        currentZoom = caps.zoom.min || 1;
+        if (caps.zoom.max >= 2) {
+          currentZoom = 2; // Default to 2x zoom so users don't have to get too close
+          advancedConstraints.zoom = currentZoom;
+          document.getElementById('btn-zoom').textContent = `🔍 Zoom (${currentZoom}x)`;
+        }
+      }
+      if (Object.keys(advancedConstraints).length > 0) {
+        await track.applyConstraints({ advanced: [advancedConstraints] });
+      }
+    }
+
     codeReader = new ZXing.BrowserMultiFormatReader();
-    
-    // Explicitly configure low interval constraints (throttling loop prevents freezing)
-    codeReader.timeBetweenDecodingAttempts = 40; 
+    codeReader.timeBetweenDecodingAttempts = 60; // Throttled processing avoids lag spikes
     
     codeReader.decodeFromStream(stream, video, (result, err) => {
       if (result && !scanCooldown) {
@@ -537,33 +549,62 @@ async function startCamera() {
           handleBarcode(code); 
           scanSuccessFeedback();
           scanCooldown = true;
-          setTimeout(() => { scanCooldown = false; }, 800); // Cooldown to block duplicated scans
+          setTimeout(() => { scanCooldown = false; }, 1000);
         }
       }
     });
     scanning = true;
-    setStatus('📷 Camera active — point at a barcode');
+    setStatus('📷 Camera focused. Align barcode in box.');
   } catch(err) {
-    setStatus('Camera unavailable: ' + err.message + '. Use manual input below.');
+    setStatus('Camera initialization failed. Use manual search below.');
+    console.error(err);
   }
 }
 
-function stopStream() {
+// ── Hardware Zoom Control Function ──────────────────────────────────────────
+async function toggleZoom() {
+  const video = document.getElementById('video');
+  const track = video.srcObject?.getVideoTracks?.()[0];
+  if (!track || !track.getCapabilities) return alert('Camera not active');
+  
+  const caps = track.getCapabilities();
+  if (!caps.zoom) return alert('Digital zoom not supported on this phone device');
+
+  // Cycle zoom values between 1x, 2x, and 3x depending on capabilities
+  if (currentZoom === 1) {
+    currentZoom = Math.min(2, caps.zoom.max);
+  } else if (currentZoom === 2) {
+    currentZoom = Math.min(3, caps.zoom.max);
+  } else {
+    currentZoom = caps.zoom.min || 1;
+  }
+
+  await track.applyConstraints({ advanced: [{ zoom: currentZoom }] });
+  document.getElementById('btn-zoom').textContent = `🔍 Zoom (${currentZoom.toFixed(1)}x)`;
+}
+
+async function toggleTorch(){
+  const video = document.getElementById('video');
+  const track = video.srcObject?.getVideoTracks?.()[0];
+  if(!track) return alert('Camera not active');
+  const caps = track.getCapabilities?.();
+  if(!caps || !caps.torch) return alert('Torch feature not supported');
+  window.__torchOn = !window.__torchOn;
+  await track.applyConstraints({advanced:[{torch: window.__torchOn}]});
+}
+
+function stopCamera() {
+  if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
   const video = document.getElementById('video');
   if (video.srcObject) {
     video.srcObject.getTracks().forEach(t => t.stop());
     video.srcObject = null;
   }
-}
-
-function stopCamera() {
-  if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
-  stopStream();
   scanning = false;
   document.getElementById('video-wrap').style.display = 'none';
   document.getElementById('btn-stop').style.display = 'none';
-  document.querySelector('.scan-hint').style.display = 'none';
-  setStatus('Camera stopped. Use manual input.');
+  document.getElementById('btn-zoom').style.display = 'none';
+  setStatus('Camera offline.');
 }
 
 function setStatus(msg) {
@@ -572,7 +613,7 @@ function setStatus(msg) {
   bar.textContent = msg;
 }
 
-// ── Lookup ──────────────────────────────────────────────────────────────────
+// ── Match Logic ─────────────────────────────────────────────────────────────
 function searchManual() {
   const val = document.getElementById('manual-input').value.trim();
   if (!val) return;
@@ -583,51 +624,18 @@ document.getElementById('manual-input').addEventListener('keydown', function(e) 
   if (e.key === 'Enter') searchManual();
 });
 
-function scanSuccessFeedback(){
-  try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 900;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
-    osc.stop(ctx.currentTime + 0.08);
-  }catch(e){}
-}
-
-async function toggleTorch(){
-  const video = document.getElementById('video');
-  const track = video.srcObject?.getVideoTracks?.()[0];
-  if(!track) return alert('Camera not active');
-  const caps = track.getCapabilities?.();
-  if(!caps || !caps.torch) return alert('Torch not supported on this device');
-  window.__torchOn = !window.__torchOn;
-  await track.applyConstraints({advanced:[{torch: window.__torchOn}]});
-}
-
 function handleBarcode(code) {
   document.getElementById('result-card').style.display = 'none';
   document.getElementById('not-found').style.display = 'none';
 
   const codeStr = String(code).trim();
-  
-  // Step 1: Check absolute direct dictionary matches
   let row = barcodeMap.get(codeStr);
   
-  // Step 2: Instant fallback matching via indexed short combinations
   if (!row) {
-    if (codeStr.length === 5) {
-      row = suffix5Map.get(codeStr);
-    } else if (codeStr.length === 6) {
-      row = suffix6Map.get(codeStr);
-    }
+    if (codeStr.length === 5) row = suffix5Map.get(codeStr);
+    else if (codeStr.length === 6) row = suffix6Map.get(codeStr);
   }
 
-  // Step 3: Deep check if entry was partial and non-standard length
   if (!row && codeStr.length >= 4) {
     row = sheetData.find(r => String(r[barcodeCol]).trim().endsWith(codeStr));
   }
@@ -643,7 +651,6 @@ function handleBarcode(code) {
   const card = document.getElementById('result-card');
   const qtyEl = document.getElementById('res-qty');
 
-  // Display the true original barcode from your inventory database 
   document.getElementById('res-barcode').textContent = String(row[barcodeCol]).trim();
   qtyEl.textContent = qty !== '' ? qty : '—';
   qtyEl.className = 'qty-badge ' + (isNaN(qtyNum) ? '' : qtyNum <= 0 ? 'out-stock' : qtyNum <= 5 ? 'low-stock' : 'in-stock');
@@ -655,7 +662,6 @@ function handleBarcode(code) {
     document.getElementById('res-name-row').style.display = 'none';
   }
 
-  // Extra structural data details
   const extraDiv = document.getElementById('extra-rows');
   extraDiv.innerHTML = '';
   const skip = new Set([barcodeCol, qtyCol, nameCol]);
@@ -669,6 +675,22 @@ function handleBarcode(code) {
 
   card.style.display = 'block';
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function scanSuccessFeedback(){
+  try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 900;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
+    osc.stop(ctx.currentTime + 0.08);
+  }catch(e){}
 }
 </script>
 </body>
