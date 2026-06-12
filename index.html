@@ -560,7 +560,16 @@ function handleBarcode(code) {
   document.getElementById('not-found').style.display = 'none';
 
   const codeStr = String(code).trim();
-  const row = barcodeMap.get(codeStr) || sheetData.find(r => String(r[barcodeCol]).trim() === codeStr);
+  
+let row = barcodeMap.get(codeStr);
+
+if (!row && codeStr.length >= 6) {
+  row = sheetData.find(r => {
+    const barcode = String(r[barcodeCol]).trim();
+    return barcode.endsWith(codeStr) || barcode.slice(-6) === codeStr;
+  });
+}
+
 
   if (!row) {
     document.getElementById('not-found').style.display = 'block';
