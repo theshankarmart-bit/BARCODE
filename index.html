@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stock Lookup</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
@@ -185,7 +185,7 @@
     color: #666b8a;
   }
 
-  /* Control Row */
+  /* Control buttons adjustment */
   .control-row {
     display: flex;
     gap: 8px;
@@ -425,9 +425,10 @@ let scanning = false;
 let lastScanned = '';
 let scanCooldown = false;
 
-// Optimization maps for O(1) instantaneous responses
+// Optimization maps for instant lookup matches
 let barcodeMap = new Map();
-let suffixMap = new Map();
+let suffix5Map = new Map();
+let suffix6Map = new Map();
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 document.getElementById('excel-file').addEventListener('change', function(e) {
@@ -479,25 +480,24 @@ function confirmMapping() {
   nameCol = document.getElementById('sel-name').value;
   if (!barcodeCol || !qtyCol) { alert('Please select barcode and quantity columns.'); return; }
 
-  // Build high-performance lookup indexes
+  // Re-build high speed O(1) matching indexing models
   barcodeMap.clear();
-  suffixMap.clear();
+  suffix5Map.clear();
+  suffix6Map.clear();
   
   sheetData.forEach(row => {
     const rawCode = String(row[barcodeCol] || '').trim();
     if (!rawCode) return;
     
-    // Exact mapping
+    // Main direct dictionary matching
     barcodeMap.set(rawCode, row);
     
-    // Short-code mapping (Last 5 and 6 digits mapping)
+    // Index trailing fractions for faster custom inputs (last 5 & 6 digits)
     if (rawCode.length >= 5) {
-      const last5 = rawCode.slice(-5);
-      if (!suffixMap.has(last5)) suffixMap.set(last5, row);
+      suffix5Map.set(rawCode.slice(-5), row);
     }
     if (rawCode.length >= 6) {
-      const last6 = rawCode.slice(-6);
-      if (!suffixMap.has(last6)) suffixMap.set(last6, row);
+      suffix6Map.set(rawCode.slice(-6), row);
     }
   });
 
@@ -510,21 +510,24 @@ function confirmMapping() {
 async function startCamera() {
   setStatus('Starting camera…');
   try {
-    // Ultra-Fast Optimizations: Constraint configurations set to target high framerates
+    // Ultra-Fast Tweaks: Limiting resolution options removes excessive computation overhead
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { 
         facingMode: { ideal: 'environment' }, 
         width: { ideal: 640 }, 
         height: { ideal: 480 },
-        frameRate: { ideal: 30, min: 20 }
+        frameRate: { ideal: 30, min: 25 }
       }
     });
     const video = document.getElementById('video');
     video.srcObject = stream;
     await video.play();
 
-    // Initialize the reader with lower parsing hints overhead 
+    // Instantiate engine with custom time parsing limits
     codeReader = new ZXing.BrowserMultiFormatReader();
+    
+    // Explicitly configure low interval constraints (throttling loop prevents freezing)
+    codeReader.timeBetweenDecodingAttempts = 40; 
     
     codeReader.decodeFromStream(stream, video, (result, err) => {
       if (result && !scanCooldown) {
@@ -534,7 +537,7 @@ async function startCamera() {
           handleBarcode(code); 
           scanSuccessFeedback();
           scanCooldown = true;
-          setTimeout(() => { scanCooldown = false; }, 400); // Prevent multi-triggers
+          setTimeout(() => { scanCooldown = false; }, 800); // Cooldown to block duplicated scans
         }
       }
     });
@@ -612,22 +615,26 @@ function handleBarcode(code) {
 
   const codeStr = String(code).trim();
   
-  // Ultra-fast resolution strategy using pre-built hash maps
+  // Step 1: Check absolute direct dictionary matches
   let row = barcodeMap.get(codeStr);
   
-  // Fallback instantly to the partial suffix index map if exact match fails
-  if (!row && (codeStr.length === 5 || codeStr.length === 6)) {
-    row = suffixMap.get(codeStr);
+  // Step 2: Instant fallback matching via indexed short combinations
+  if (!row) {
+    if (codeStr.length === 5) {
+      row = suffix5Map.get(codeStr);
+    } else if (codeStr.length === 6) {
+      row = suffix6Map.get(codeStr);
+    }
   }
 
-  // Final catch-all if data entry differs slightly from the parsed layout
-  if (!row) {
+  // Step 3: Deep check if entry was partial and non-standard length
+  if (!row && codeStr.length >= 4) {
     row = sheetData.find(r => String(r[barcodeCol]).trim().endsWith(codeStr));
   }
 
   if (!row) {
     document.getElementById('not-found').style.display = 'block';
-    document.getElementById('nf-code').textContent = 'Barcode query: ' + codeStr;
+    document.getElementById('nf-code').textContent = 'Searched code: ' + codeStr;
     return;
   }
 
@@ -636,7 +643,7 @@ function handleBarcode(code) {
   const card = document.getElementById('result-card');
   const qtyEl = document.getElementById('res-qty');
 
-  // Display the true full barcode string found in the database records
+  // Display the true original barcode from your inventory database 
   document.getElementById('res-barcode').textContent = String(row[barcodeCol]).trim();
   qtyEl.textContent = qty !== '' ? qty : '—';
   qtyEl.className = 'qty-badge ' + (isNaN(qtyNum) ? '' : qtyNum <= 0 ? 'out-stock' : qtyNum <= 5 ? 'low-stock' : 'in-stock');
@@ -648,7 +655,7 @@ function handleBarcode(code) {
     document.getElementById('res-name-row').style.display = 'none';
   }
 
-  // Extra columns extraction
+  // Extra structural data details
   const extraDiv = document.getElementById('extra-rows');
   extraDiv.innerHTML = '';
   const skip = new Set([barcodeCol, qtyCol, nameCol]);
