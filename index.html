@@ -161,7 +161,7 @@
     pointer-events: none;
   }
   .scan-box {
-    width: 200px; height: 120px;
+    width: 240px; height: 140px;
     border: 2px solid #5b6af0;
     border-radius: 10px;
     box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
@@ -172,9 +172,9 @@
     left: 0; right: 0;
     height: 2px;
     background: linear-gradient(90deg, transparent, #5b6af0, transparent);
-    animation: scan 2s linear infinite;
+    animation: scan 1.5s linear infinite;
   }
-  .scan-box::after { animation-delay: 1s; }
+  .scan-box::after { animation-delay: 0.75s; }
   @keyframes scan {
     0% { top: 0; } 100% { top: 100%; }
   }
@@ -183,6 +183,26 @@
     text-align: center;
     font-size: 12px;
     color: #666b8a;
+  }
+
+  /* Control Row */
+  .control-row {
+    display: flex;
+    gap: 8px;
+  }
+  .control-row .btn-stop {
+    flex: 2;
+  }
+  .control-row .btn-torch {
+    flex: 1;
+    background: #1a1d27;
+    color: #d0d4f0;
+    border: 1px solid #2a2d3a;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
   }
 
   /* Manual input */
@@ -320,12 +340,11 @@
 
 <header>
   <h1>📦 Stock Lookup</h1>
-  <p>Scan barcode → get quantity from Excel</p>
+  <p>Scan barcode / last 5-6 digits → get quantity</p>
 </header>
 
 <div class="container">
 
-  <!-- Step 1: Upload Excel -->
   <div class="upload-card" id="upload-card">
     <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" />
     <div class="upload-icon">📊</div>
@@ -333,7 +352,6 @@
     <p id="upload-sub">Tap to select your inventory file</p>
   </div>
 
-  <!-- Step 2: Map columns -->
   <div id="col-mapper">
     <h3>Map your columns</h3>
     <div class="field-row">
@@ -351,7 +369,6 @@
     <button class="btn-confirm" onclick="confirmMapping()">✓ Confirm & Start Scanning</button>
   </div>
 
-  <!-- Step 3: Scanner + manual -->
   <div id="scanner-section">
     <div id="status-bar"></div>
 
@@ -360,16 +377,19 @@
       <div class="scan-overlay"><div class="scan-box"></div></div>
     </div>
     <p class="scan-hint">Point camera at barcode — auto-detects</p>
-    <button class="btn-stop" id="btn-stop" onclick="stopCamera()">⏹ Stop Camera</button><button class="btn-stop" onclick="toggleTorch()">🔦 Torch</button>
+    
+    <div class="control-row">
+      <button class="btn-stop" id="btn-stop" onclick="stopCamera()">⏹ Stop Camera</button>
+      <button class="btn-torch" onclick="toggleTorch()">🔦 Torch</button>
+    </div>
 
-    <div class="divider-or">or type manually</div>
+    <div class="divider-or">or type barcode (full or last 5-6 digits)</div>
 
     <div class="manual-row">
       <input type="text" id="manual-input" placeholder="Type barcode & press Search" inputmode="numeric" />
       <button class="btn-search" onclick="searchManual()">Search</button>
     </div>
 
-    <!-- Result -->
     <div id="result-card">
       <div class="result-header">
         <span>Result</span>
@@ -404,7 +424,10 @@ let codeReader = null;
 let scanning = false;
 let lastScanned = '';
 let scanCooldown = false;
+
+// Optimization maps for O(1) instantaneous responses
 let barcodeMap = new Map();
+let suffixMap = new Map();
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 document.getElementById('excel-file').addEventListener('change', function(e) {
@@ -418,7 +441,6 @@ document.getElementById('excel-file').addEventListener('change', function(e) {
       const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
       if (!json.length) { alert('Sheet appears empty.'); return; }
       sheetData = json;
-      barcodeMap = new Map(json.map(r => [String(r[Object.keys(r)[0]]).trim(), r]));
       headers = Object.keys(json[0]);
       populateSelectors();
       document.getElementById('upload-title').textContent = '✅ ' + file.name;
@@ -442,7 +464,6 @@ function populateSelectors() {
       sel.appendChild(opt);
     });
   });
-  // Smart defaults
   const lower = headers.map(h => h.toLowerCase());
   const barcodeGuess = lower.findIndex(h => /barcode|ean|upc|sku|code|id/.test(h));
   const qtyGuess = lower.findIndex(h => /qty|quantity|stock|count|available|balance/.test(h));
@@ -457,6 +478,29 @@ function confirmMapping() {
   qtyCol = document.getElementById('sel-qty').value;
   nameCol = document.getElementById('sel-name').value;
   if (!barcodeCol || !qtyCol) { alert('Please select barcode and quantity columns.'); return; }
+
+  // Build high-performance lookup indexes
+  barcodeMap.clear();
+  suffixMap.clear();
+  
+  sheetData.forEach(row => {
+    const rawCode = String(row[barcodeCol] || '').trim();
+    if (!rawCode) return;
+    
+    // Exact mapping
+    barcodeMap.set(rawCode, row);
+    
+    // Short-code mapping (Last 5 and 6 digits mapping)
+    if (rawCode.length >= 5) {
+      const last5 = rawCode.slice(-5);
+      if (!suffixMap.has(last5)) suffixMap.set(last5, row);
+    }
+    if (rawCode.length >= 6) {
+      const last6 = rawCode.slice(-6);
+      if (!suffixMap.has(last6)) suffixMap.set(last6, row);
+    }
+  });
+
   document.getElementById('col-mapper').style.display = 'none';
   document.getElementById('scanner-section').style.display = 'flex';
   startCamera();
@@ -466,23 +510,31 @@ function confirmMapping() {
 async function startCamera() {
   setStatus('Starting camera…');
   try {
-    // Use environment-facing camera (back camera on phones) via getUserMedia
+    // Ultra-Fast Optimizations: Constraint configurations set to target high framerates
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }
+      video: { 
+        facingMode: { ideal: 'environment' }, 
+        width: { ideal: 640 }, 
+        height: { ideal: 480 },
+        frameRate: { ideal: 30, min: 20 }
+      }
     });
     const video = document.getElementById('video');
     video.srcObject = stream;
     await video.play();
 
+    // Initialize the reader with lower parsing hints overhead 
     codeReader = new ZXing.BrowserMultiFormatReader();
+    
     codeReader.decodeFromStream(stream, video, (result, err) => {
       if (result && !scanCooldown) {
         const code = result.getText();
         if (code !== lastScanned) {
           lastScanned = code;
-          handleBarcode(code); scanSuccessFeedback();
+          handleBarcode(code); 
+          scanSuccessFeedback();
           scanCooldown = true;
-          setTimeout(() => { scanCooldown = false; }, 300);
+          setTimeout(() => { scanCooldown = false; }, 400); // Prevent multi-triggers
         }
       }
     });
@@ -528,7 +580,6 @@ document.getElementById('manual-input').addEventListener('keydown', function(e) 
   if (e.key === 'Enter') searchManual();
 });
 
-
 function scanSuccessFeedback(){
   try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
   try{
@@ -561,19 +612,22 @@ function handleBarcode(code) {
 
   const codeStr = String(code).trim();
   
-let row = barcodeMap.get(codeStr);
+  // Ultra-fast resolution strategy using pre-built hash maps
+  let row = barcodeMap.get(codeStr);
+  
+  // Fallback instantly to the partial suffix index map if exact match fails
+  if (!row && (codeStr.length === 5 || codeStr.length === 6)) {
+    row = suffixMap.get(codeStr);
+  }
 
-if (!row && codeStr.length >= 6) {
-  row = sheetData.find(r => {
-    const barcode = String(r[barcodeCol]).trim();
-    return barcode.endsWith(codeStr) || barcode.slice(-6) === codeStr;
-  });
-}
-
+  // Final catch-all if data entry differs slightly from the parsed layout
+  if (!row) {
+    row = sheetData.find(r => String(r[barcodeCol]).trim().endsWith(codeStr));
+  }
 
   if (!row) {
     document.getElementById('not-found').style.display = 'block';
-    document.getElementById('nf-code').textContent = 'Barcode: ' + codeStr;
+    document.getElementById('nf-code').textContent = 'Barcode query: ' + codeStr;
     return;
   }
 
@@ -582,7 +636,8 @@ if (!row && codeStr.length >= 6) {
   const card = document.getElementById('result-card');
   const qtyEl = document.getElementById('res-qty');
 
-  document.getElementById('res-barcode').textContent = codeStr;
+  // Display the true full barcode string found in the database records
+  document.getElementById('res-barcode').textContent = String(row[barcodeCol]).trim();
   qtyEl.textContent = qty !== '' ? qty : '—';
   qtyEl.className = 'qty-badge ' + (isNaN(qtyNum) ? '' : qtyNum <= 0 ? 'out-stock' : qtyNum <= 5 ? 'low-stock' : 'in-stock');
 
@@ -593,7 +648,7 @@ if (!row && codeStr.length >= 6) {
     document.getElementById('res-name-row').style.display = 'none';
   }
 
-  // Extra columns
+  // Extra columns extraction
   const extraDiv = document.getElementById('extra-rows');
   extraDiv.innerHTML = '';
   const skip = new Set([barcodeCol, qtyCol, nameCol]);
