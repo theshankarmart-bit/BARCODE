@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Stock Lookup</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #f0f0f0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 0 40px 0;
+  }
+
+  header {
+    width: 100%;
+    background: #1a1d27;
+    border-bottom: 1px solid #2a2d3a;
+    padding: 18px 20px 14px;
+    text-align: center;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: #fff;
+  }
+  header p {
+    font-size: 12px;
+    color: #7a7f9a;
+    margin-top: 3px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Upload card */
+  .upload-card {
+    background: #1a1d27;
+    border: 1.5px dashed #2f3347;
+    border-radius: 14px;
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .upload-card:hover, .upload-card.drag-over {
+    border-color: #5b6af0;
+    background: #1e2135;
+  }
+  .upload-card input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .upload-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+  .upload-card h3 {
+    font-size: 14px; font-weight: 600; color: #d0d4f0;
+  }
+  .upload-card p {
+    font-size: 12px; color: #666b8a; margin-top: 4px;
+  }
+  .upload-card.loaded {
+    border-style: solid;
+    border-color: #2a5f3a;
+    background: #141f1a;
+  }
+  .upload-card.loaded h3 { color: #5ccf7e; }
+
+  /* Column mapper */
+  #col-mapper {
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
+    border-radius: 14px;
+    padding: 16px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #col-mapper h3 {
+    font-size: 13px; font-weight: 600; color: #a0a5c0; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .field-row label {
+    font-size: 13px; color: #8890b0; min-width: 80px; flex-shrink: 0;
+  }
+  select {
+    flex: 1;
+    background: #0f1117;
+    border: 1px solid #2a2d3a;
+    border-radius: 8px;
+    color: #d0d4f0;
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  select:focus { border-color: #5b6af0; }
+
+  .btn-confirm {
+    background: #5b6af0;
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.15s;
+  }
+  .btn-confirm:hover { background: #4a59e0; }
+  .btn-confirm:active { background: #3a49d0; }
+
+  /* Scanner area */
+  #scanner-section {
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .video-wrap {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4/3;
+    width: 100%;
+  }
+  video {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block;
+  }
+  .scan-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .scan-box {
+    width: 200px; height: 120px;
+    border: 2px solid #5b6af0;
+    border-radius: 10px;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+  }
+  .scan-box::before, .scan-box::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #5b6af0, transparent);
+    animation: scan 2s linear infinite;
+  }
+  .scan-box::after { animation-delay: 1s; }
+  @keyframes scan {
+    0% { top: 0; } 100% { top: 100%; }
+  }
+
+  .scan-hint {
+    text-align: center;
+    font-size: 12px;
+    color: #666b8a;
+  }
+
+  /* Manual input */
+  .manual-row {
+    display: flex; gap: 8px;
+  }
+  .manual-row input {
+    flex: 1;
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
+    border-radius: 9px;
+    color: #d0d4f0;
+    font-size: 14px;
+    padding: 10px 12px;
+    outline: none;
+  }
+  .manual-row input:focus { border-color: #5b6af0; }
+  .manual-row input::placeholder { color: #444860; }
+  .btn-search {
+    background: #5b6af0;
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* Result */
+  #result-card {
+    display: none;
+    background: #1a1d27;
+    border-radius: 14px;
+    border: 1px solid #2a2d3a;
+    overflow: hidden;
+  }
+  .result-header {
+    padding: 12px 16px;
+    background: #141626;
+    border-bottom: 1px solid #2a2d3a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .result-header span {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.8px; color: #666b8a;
+  }
+  .result-barcode {
+    font-size: 13px; color: #5b6af0; font-family: monospace;
+  }
+  .result-body { padding: 16px; }
+  .result-row {
+    display: flex; justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid #1e2030;
+    font-size: 13px;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row .lbl { color: #666b8a; }
+  .result-row .val { color: #d0d4f0; font-weight: 500; text-align: right; max-width: 60%; word-break: break-word; }
+  .qty-badge {
+    font-size: 28px; font-weight: 700;
+    text-align: center;
+    padding: 14px 0 8px;
+  }
+  .qty-badge.in-stock { color: #5ccf7e; }
+  .qty-badge.low-stock { color: #f0a850; }
+  .qty-badge.out-stock { color: #e05c6a; }
+  .qty-label {
+    text-align: center; font-size: 11px; color: #666b8a;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding-bottom: 12px;
+  }
+  .result-divider { height: 1px; background: #1e2030; margin: 4px 0 12px; }
+
+  /* Not found */
+  #not-found {
+    display: none;
+    background: #1f1218;
+    border: 1px solid #4a2030;
+    border-radius: 14px;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  #not-found .nf-icon { font-size: 28px; margin-bottom: 8px; }
+  #not-found h3 { font-size: 14px; color: #e05c6a; margin-bottom: 4px; }
+  #not-found p { font-size: 12px; color: #7a3040; }
+
+  /* Status bar */
+  #status-bar {
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #8890b0;
+    text-align: center;
+    display: none;
+  }
+
+  .btn-stop {
+    background: #2a1020;
+    color: #e05c6a;
+    border: 1px solid #4a2030;
+    border-radius: 9px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .divider-or {
+    text-align: center;
+    font-size: 11px;
+    color: #444860;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .divider-or::before, .divider-or::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #2a2d3a;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📦 Stock Lookup</h1>
+  <p>Scan barcode → get quantity from Excel</p>
+</header>
+
+<div class="container">
+
+  <!-- Step 1: Upload Excel -->
+  <div class="upload-card" id="upload-card">
+    <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" />
+    <div class="upload-icon">📊</div>
+    <h3 id="upload-title">Upload your Excel / CSV</h3>
+    <p id="upload-sub">Tap to select your inventory file</p>
+  </div>
+
+  <!-- Step 2: Map columns -->
+  <div id="col-mapper">
+    <h3>Map your columns</h3>
+    <div class="field-row">
+      <label>Barcode col</label>
+      <select id="sel-barcode"></select>
+    </div>
+    <div class="field-row">
+      <label>Quantity col</label>
+      <select id="sel-qty"></select>
+    </div>
+    <div class="field-row">
+      <label>Name col <span style="color:#444860">(opt)</span></label>
+      <select id="sel-name"></select>
+    </div>
+    <button class="btn-confirm" onclick="confirmMapping()">✓ Confirm & Start Scanning</button>
+  </div>
+
+  <!-- Step 3: Scanner + manual -->
+  <div id="scanner-section">
+    <div id="status-bar"></div>
+
+    <div class="video-wrap" id="video-wrap">
+      <video id="video" playsinline muted></video>
+      <div class="scan-overlay"><div class="scan-box"></div></div>
+    </div>
+    <p class="scan-hint">Point camera at barcode — auto-detects</p>
+    <button class="btn-stop" id="btn-stop" onclick="stopCamera()">⏹ Stop Camera</button><button class="btn-stop" onclick="toggleTorch()">🔦 Torch</button>
+
+    <div class="divider-or">or type manually</div>
+
+    <div class="manual-row">
+      <input type="text" id="manual-input" placeholder="Type barcode & press Search" inputmode="numeric" />
+      <button class="btn-search" onclick="searchManual()">Search</button>
+    </div>
+
+    <!-- Result -->
+    <div id="result-card">
+      <div class="result-header">
+        <span>Result</span>
+        <span class="result-barcode" id="res-barcode"></span>
+      </div>
+      <div class="result-body">
+        <div class="qty-badge" id="res-qty">—</div>
+        <div class="qty-label">units in stock</div>
+        <div class="result-divider"></div>
+        <div class="result-row" id="res-name-row">
+          <span class="lbl">Product</span>
+          <span class="val" id="res-name">—</span>
+        </div>
+        <div id="extra-rows"></div>
+      </div>
+    </div>
+
+    <div id="not-found">
+      <div class="nf-icon">🔍</div>
+      <h3>Barcode not found</h3>
+      <p id="nf-code"></p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let sheetData = [];
+let headers = [];
+let barcodeCol = '', qtyCol = '', nameCol = '';
+let codeReader = null;
+let scanning = false;
+let lastScanned = '';
+let scanCooldown = false;
+let barcodeMap = new Map();
+
+// ── Upload ──────────────────────────────────────────────────────────────────
+document.getElementById('excel-file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!json.length) { alert('Sheet appears empty.'); return; }
+      sheetData = json;
+      barcodeMap = new Map(json.map(r => [String(r[Object.keys(r)[0]]).trim(), r]));
+      headers = Object.keys(json[0]);
+      populateSelectors();
+      document.getElementById('upload-title').textContent = '✅ ' + file.name;
+      document.getElementById('upload-sub').textContent = json.length + ' rows loaded';
+      document.getElementById('upload-card').classList.add('loaded');
+      document.getElementById('col-mapper').style.display = 'flex';
+    } catch(err) {
+      alert('Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsBinaryString(file);
+});
+
+function populateSelectors() {
+  ['sel-barcode','sel-qty','sel-name'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = (id === 'sel-name' ? '<option value="">— none —</option>' : '');
+    headers.forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h; opt.textContent = h;
+      sel.appendChild(opt);
+    });
+  });
+  // Smart defaults
+  const lower = headers.map(h => h.toLowerCase());
+  const barcodeGuess = lower.findIndex(h => /barcode|ean|upc|sku|code|id/.test(h));
+  const qtyGuess = lower.findIndex(h => /qty|quantity|stock|count|available|balance/.test(h));
+  const nameGuess = lower.findIndex(h => /name|product|description|item|title/.test(h));
+  if (barcodeGuess >= 0) document.getElementById('sel-barcode').selectedIndex = barcodeGuess;
+  if (qtyGuess >= 0) document.getElementById('sel-qty').selectedIndex = qtyGuess;
+  if (nameGuess >= 0) document.getElementById('sel-name').selectedIndex = nameGuess + 1;
+}
+
+function confirmMapping() {
+  barcodeCol = document.getElementById('sel-barcode').value;
+  qtyCol = document.getElementById('sel-qty').value;
+  nameCol = document.getElementById('sel-name').value;
+  if (!barcodeCol || !qtyCol) { alert('Please select barcode and quantity columns.'); return; }
+  document.getElementById('col-mapper').style.display = 'none';
+  document.getElementById('scanner-section').style.display = 'flex';
+  startCamera();
+}
+
+// ── Camera ──────────────────────────────────────────────────────────────────
+async function startCamera() {
+  setStatus('Starting camera…');
+  try {
+    // Use environment-facing camera (back camera on phones) via getUserMedia
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    await video.play();
+
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    codeReader.decodeFromStream(stream, video, (result, err) => {
+      if (result && !scanCooldown) {
+        const code = result.getText();
+        if (code !== lastScanned) {
+          lastScanned = code;
+          handleBarcode(code); scanSuccessFeedback();
+          scanCooldown = true;
+          setTimeout(() => { scanCooldown = false; }, 300);
+        }
+      }
+    });
+    scanning = true;
+    setStatus('📷 Camera active — point at a barcode');
+  } catch(err) {
+    setStatus('Camera unavailable: ' + err.message + '. Use manual input below.');
+  }
+}
+
+function stopStream() {
+  const video = document.getElementById('video');
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+}
+
+function stopCamera() {
+  if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
+  stopStream();
+  scanning = false;
+  document.getElementById('video-wrap').style.display = 'none';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.querySelector('.scan-hint').style.display = 'none';
+  setStatus('Camera stopped. Use manual input.');
+}
+
+function setStatus(msg) {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = 'block';
+  bar.textContent = msg;
+}
+
+// ── Lookup ──────────────────────────────────────────────────────────────────
+function searchManual() {
+  const val = document.getElementById('manual-input').value.trim();
+  if (!val) return;
+  handleBarcode(val);
+}
+
+document.getElementById('manual-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') searchManual();
+});
+
+
+function scanSuccessFeedback(){
+  try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 900;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.08);
+    osc.stop(ctx.currentTime + 0.08);
+  }catch(e){}
+}
+
+async function toggleTorch(){
+  const video = document.getElementById('video');
+  const track = video.srcObject?.getVideoTracks?.()[0];
+  if(!track) return alert('Camera not active');
+  const caps = track.getCapabilities?.();
+  if(!caps || !caps.torch) return alert('Torch not supported on this device');
+  window.__torchOn = !window.__torchOn;
+  await track.applyConstraints({advanced:[{torch: window.__torchOn}]});
+}
+
+function handleBarcode(code) {
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('not-found').style.display = 'none';
+
+  const codeStr = String(code).trim();
+  const row = barcodeMap.get(codeStr) || sheetData.find(r => String(r[barcodeCol]).trim() === codeStr);
+
+  if (!row) {
+    document.getElementById('not-found').style.display = 'block';
+    document.getElementById('nf-code').textContent = 'Barcode: ' + codeStr;
+    return;
+  }
+
+  const qty = row[qtyCol];
+  const qtyNum = parseFloat(qty);
+  const card = document.getElementById('result-card');
+  const qtyEl = document.getElementById('res-qty');
+
+  document.getElementById('res-barcode').textContent = codeStr;
+  qtyEl.textContent = qty !== '' ? qty : '—';
+  qtyEl.className = 'qty-badge ' + (isNaN(qtyNum) ? '' : qtyNum <= 0 ? 'out-stock' : qtyNum <= 5 ? 'low-stock' : 'in-stock');
+
+  if (nameCol && row[nameCol]) {
+    document.getElementById('res-name').textContent = row[nameCol];
+    document.getElementById('res-name-row').style.display = 'flex';
+  } else {
+    document.getElementById('res-name-row').style.display = 'none';
+  }
+
+  // Extra columns
+  const extraDiv = document.getElementById('extra-rows');
+  extraDiv.innerHTML = '';
+  const skip = new Set([barcodeCol, qtyCol, nameCol]);
+  Object.entries(row).forEach(([k, v]) => {
+    if (skip.has(k) || v === '' || v === null || v === undefined) return;
+    const div = document.createElement('div');
+    div.className = 'result-row';
+    div.innerHTML = `<span class="lbl">${k}</span><span class="val">${v}</span>`;
+    extraDiv.appendChild(div);
+  });
+
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+</body>
+</html>
